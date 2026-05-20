@@ -14,9 +14,7 @@ BEST_DER = 0.3822
 TARGET_FILE = "extractor.py"
 EVAL_CMD = ["python", "eval.py"]
 LOG_FILE = "results.tsv"
-#MODEL_ID = "gemini-3.1-flash-lite-preview"
-#MODEL_ID = "gemini-2.5-pro"
-MODEL_ID = "gemini-3.5-flash"
+MODEL_ID = "gemini-3.5-flash"  # Menggunakan model sesuai log eksperimen terakhir Anda
 
 # =========================================================================
 # 1. ROOT-LEVEL TEMPLATE
@@ -59,10 +57,10 @@ def process_audio(audio_path):
 """
 
 # =========================================================================
-# 2. SYSTEM PROMPT & KEY INFORMATION (DSP HINTS)
+# 2. SYSTEM PROMPT DENGAN BATASAN SURGICAL ATTENUATION
 # =========================================================================
 system_prompt = """You are an autonomous DSP research agent. 
-Minimize the Diarization Error Rate (DER) of an audio file containing speech.
+Minimize the Diarization Error Rate (DER) of an audio file containing speech and heavy laughter.
 
 Rules:
 1. Output ONLY a complete Python function named `apply_dsp_filter(y, sr)`.
@@ -72,10 +70,11 @@ Rules:
 5. DO NOT use ANY Pyannote functions. You are ONLY processing raw numpy arrays.
 6. Output your code in a single ```python code block.
 
-HINTS FOR SUCCESS (AVOID DIARIZATION ARTIFACTS):
-- Avoid Hard Masking: Setting arrays abruptly to 0.0 creates artifacts (clicks) that destroy embeddings, spiking False Alarms (FA) and Confusion (CF). Use Soft Masking (e.g., attenuating by multiplying by 0.2) or Wiener filters.
-- Try HPSS: Laughter often has strong percussive/broadband energy, while speech is highly harmonic. Use `librosa.effects.hpss` to separate or suppress percussive components naturally.
-- Use Smooth Transitions: If using thresholds, apply a Hann window or a long convolution filter to smooth the transitions between masked and unmasked regions."""
+CRITICAL PARADIGM: SURGICAL ATTENUATION ONLY
+- AVOID GLOBAL FILTERS: NEVER apply Wiener filters, spectral subtraction, continuous HPSS, or global bandpass filtering to the entire signal. These destroy the phase and spectral embeddings Pyannote relies on, heavily spiking Confusion (CF) and False Alarms (FA).
+- SURGICAL ATTENUATION: Identify laughter/noise segments using rolling statistics (e.g., MFCC variance, short-time energy, or ZCR thresholds). Apply soft attenuation (e.g., multiplying by 0.3 or 0.5) ONLY to those specific corrupted segments.
+- PRESERVE SPEECH: Leave the clean speech segments 100% exactly untouched (y_masked = y for speech parts) to preserve embedding integrity.
+- Use Smooth Transitions: If using masks or gates, apply a Hann window or a long convolution filter to smooth the transitions between masked and unmasked regions to avoid introducing click artifacts."""
 
 if not os.path.exists(LOG_FILE):
     with open(LOG_FILE, "w") as f:
@@ -84,7 +83,7 @@ if not os.path.exists(LOG_FILE):
 # =========================================================================
 # 3. HELPER FUNCTIONS & MEMORY QUEUE
 # =========================================================================
-failed_strategies = collections.deque(maxlen=3) # Limit memory to last 3 failures
+failed_strategies = collections.deque(maxlen=3)
 
 def extract_code(llm_response):
     match = re.search(r"```python\n(.*?)\n```", llm_response, re.DOTALL)
@@ -114,21 +113,20 @@ def run_eval():
         return {"status": "crash", "output": f"Failed to parse eval output. Raw: {result.stdout.strip()}"}
 
 # =========================================================================
-# 4. INITIAL SEED (Must include # STRATEGY:)
+# 4. INITIAL SEED (Conservative Baseline)
 # =========================================================================
 last_agent_code = """def apply_dsp_filter(y, sr):
-    # STRATEGY: Baseline thresholding using MFCC variance and ZCR.
+    # STRATEGY: Conservative soft-attenuation on high MFCC variance segments.
     hop_length = 512
     mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=hop_length)
-    zcr = librosa.feature.zero_crossing_rate(y=y, hop_length=hop_length)
     mfcc_var = np.var(mfccs, axis=0)
     
-    instability_threshold = np.mean(mfcc_var) + (1.5 * np.std(mfcc_var))
-    zcr_threshold = np.mean(zcr) + (2.0 * np.std(zcr))
+    # Highly conservative threshold to protect normal speech
+    threshold = np.mean(mfcc_var) + (2.5 * np.std(mfcc_var))
     
-    is_laughter = (mfcc_var > instability_threshold) & (zcr > zcr_threshold)
-    mask = np.where(is_laughter, 0.5, 1.0) # Soft mask baseline
-    smooth_mask = np.convolve(mask, np.ones(5)/5, mode='same')
+    is_laughter = mfcc_var > threshold
+    mask = np.where(is_laughter, 0.4, 1.0)
+    smooth_mask = np.convolve(mask, np.ones(9)/9, mode='same')
     
     expanded_mask = np.repeat(smooth_mask, hop_length)
     expanded_mask = expanded_mask[:len(y)]
@@ -176,7 +174,6 @@ Current best DSP logic:
         print("LLM failed to output valid code. Skipping iteration.")
         continue
 
-    # LINTER: Block forbidden code
     if "get_timeline" in new_agent_code or "pyannote" in new_agent_code.lower():
         print("🛑 PRE-FLIGHT REJECTION: AI generated forbidden Pyannote attributes.")
         last_feedback = "CRITICAL ERROR: Code contained Pyannote references. Return a 1D numpy array ONLY."
@@ -184,7 +181,6 @@ Current best DSP logic:
             f.write(f"{i}\treject\t-\t-\t-\t-\tGenerated forbidden attribute\n")
         continue
         
-    # INJECT & WRITE
     full_new_code = EXTRACTOR_TEMPLATE.replace("{AGENT_CODE}", new_agent_code)
     with open(TARGET_FILE, "w") as f:
         f.write(full_new_code)
@@ -209,11 +205,10 @@ Current best DSP logic:
             print("🔴 REGRESSION. Reverting changes & Saving to Memory.")
             subprocess.run(["git", "checkout", TARGET_FILE])
             
-            # Save to fail memory
             fail_record = f"- {strategy_used} -> FAILED (DER: {current_der:.4f}, FA: {eval_metrics['fa']:.4f}, CF: {eval_metrics['cf']:.4f})"
             failed_strategies.append(fail_record)
             
-            last_feedback = f"Worsened DER to {current_der:.4f}. Avoid this approach. Check if FA or CF spiked due to harsh masking artifacts."
+            last_feedback = f"Worsened DER to {current_der:.4f}. Avoid global filters. Ensure speech segments remain exactly 1.0 (untouched). Check if FA or CF spiked due to transition artifacts."
             log_line = f"{i}\trevert\t{current_der}\t{eval_metrics['ms']}\t{eval_metrics['fa']}\t{eval_metrics['cf']}\tRegression\n"
             
     else:
@@ -223,7 +218,6 @@ Current best DSP logic:
         
         subprocess.run(["git", "checkout", TARGET_FILE])
         
-        # Penanganan crash pada memory
         strategy_used = extract_strategy(new_agent_code)
         failed_strategies.append(f"- {strategy_used} -> CRASHED: {clean_output[:100]}")
         
