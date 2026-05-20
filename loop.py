@@ -15,6 +15,7 @@ EVAL_CMD = ["python", "eval.py"]
 LOG_FILE = "results.tsv"
 MODEL_ID = "gemini-3.1-flash-lite-preview"
 #MODEL_ID = "gemini-2.5-pro"
+#MODEL_ID = "gemini-3.5-flash"
 
 # 1. ROOT-LEVEL TEMPLATE
 # The LLM's function replaces {AGENT_CODE} at the root indentation level.
