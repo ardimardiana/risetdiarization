@@ -14,8 +14,14 @@ warnings.filterwarnings("ignore")
 
 class SingleFileProtocol(SpeakerDiarizationProtocol):
         
+    scope = "file"        # class attribute wins over instance
+    name = "POD_711_Protocol"
+
+    def __init_subclass__(cls, **kwargs):
+        pass  # block pyannote from registering/modifying subclass
+
     def __init__(self):
-        super().__init__()
+        # Don't call super().__init__() at all
         self.scope = "file"
         self.name = "POD_711_Protocol"
 

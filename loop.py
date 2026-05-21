@@ -9,7 +9,7 @@ from google.genai import types
 load_dotenv()
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-BUDGET = 10
+BUDGET = 3
 BEST_DER = 0.3822 # Your baseline DER
 TARGET_FILE = "agent_config.py"
 LOG_FILE = "results.tsv"
