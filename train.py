@@ -10,19 +10,24 @@ from pyannote.database.protocol.speaker_diarization import SpeakerDiarizationPro
 from pyannote.database.util import load_rttm
 from agent_config import get_agent_configuration
 
-# Mute the torch_audiomentations FutureWarnings to keep stdout clean
 warnings.filterwarnings("ignore")
 
 class SingleFileProtocol(SpeakerDiarizationProtocol):
-    # Satisfy Pyannote's internal protocol checks
-    name = "POD_711_Protocol" 
-    scope = "file" 
+    
+    # 1. THE FIX: Use @property to make these attributes immutable. 
+    # Pyannote's internal __init__ can no longer wipe them out.
+    @property
+    def name(self):
+        return "POD_711_Protocol"
+        
+    @property
+    def scope(self):
+        return "file"
 
     def trn_iter(self):
         rttm_data = load_rttm("POD_711.rttm")
         annotation = list(rttm_data.values())[0]
         
-        # Bulletproof duration extraction using soundfile
         duration = sf.info("POD_711.wav").duration
         annotated = Timeline([Segment(0, duration)])
 
@@ -44,10 +49,6 @@ def main():
     
     protocol = SingleFileProtocol()
     
-    # FORCE INJECT attributes to bypass Pyannote's strict __init__ wipeout
-    protocol.name = "POD_711_Protocol"
-    protocol.scope = "file"
-    
     task = SpeakerDiarization(
         protocol, 
         duration=10.0,
@@ -57,7 +58,7 @@ def main():
         num_workers=4,
         augmentation=augmentation
     )
-    
+
     hf_token = os.environ.get("HF_TOKEN")
     model = Model.from_pretrained(
         "pyannote/segmentation-3.1", 
@@ -67,7 +68,6 @@ def main():
     model.task = task
     model.setup(stage="fit")
 
-    # Force learning rate injection
     from types import MethodType
     from torch.optim import Adam
     
