@@ -1,11 +1,10 @@
 import os
 import torch
 import pytorch_lightning as pl
-from pyannote.audio.tasks import Segmentation
-from pyannote.audio.models.segmentation import PyanNet
-from pyannote.database import ProtocolFile, Registry
+from pyannote.audio import Model
+from pyannote.audio.tasks import SpeakerDiarization
+from pyannote.database import ProtocolFile
 from pyannote.database.protocol.speaker_diarization import SpeakerDiarizationProtocol
-from pyannote.core import Annotation, Segment
 from pyannote.database.util import load_rttm
 from agent_config import get_agent_configuration
 
@@ -23,45 +22,51 @@ class SingleFileProtocol(SpeakerDiarizationProtocol):
         yield from self.trn_iter()
 
 def main():
-    # Load agent configurations
     hparams, augmentation = get_agent_configuration()
     
-    # Setup Pyannote Task
     protocol = SingleFileProtocol(name="POD_711_Protocol")
-    task = Segmentation(
+    
+    # In Pyannote 3.x, the Segmentation task is replaced by SpeakerDiarization
+    task = SpeakerDiarization(
         protocol, 
-        duration=5.0, # 5-second audio chunks
-        max_num_speakers=3, 
+        duration=10.0,  # segmentation-3.0 explicitly expects 10s chunks
+        max_speakers_per_chunk=3,
+        max_speakers_per_frame=2, # Required for Powerset multi-class encoding
         batch_size=hparams.get("batch_size", 8),
         num_workers=4,
-        loss="bce",
         augmentation=augmentation
     )
 
-    # Load Base Model
-    model = PyanNet(
-        sincnet={"stride": 10}, 
-        task=task
+    # Load the pretrained model directly instead of starting from scratch
+    hf_token = os.environ.get("HF_TOKEN")
+    model = Model.from_pretrained(
+        "pyannote/segmentation-3.0", 
+        use_auth_token=hf_token
     )
+    
+    model.task = task
     model.setup(stage="fit")
 
-    # Force learning rate injection
-    model.learning_rate = hparams.get("learning_rate", 1e-4)
+    # Force learning rate injection into the PyTorch Lightning module
+    from types import MethodType
+    from torch.optim import Adam
+    
+    def configure_optimizers(self):
+        return Adam(self.parameters(), lr=hparams.get("learning_rate", 1e-4))
+        
+    model.configure_optimizers = MethodType(configure_optimizers, model)
 
-    # Setup Trainer (Strictly 2 epochs for rapid loop testing)
     trainer = pl.Trainer(
         max_epochs=2,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
-        enable_checkpointing=False, # We save manually
+        enable_checkpointing=False, 
         logger=False
     )
 
-    # Execute Fine-Tuning
     print("Starting Fine-Tuning...")
     trainer.fit(model)
 
-    # Save Checkpoint
     os.makedirs("./best_model", exist_ok=True)
     torch.save(model.state_dict(), "./best_model/pytorch_model.bin")
     print("Model saved to ./best_model/pytorch_model.bin")
