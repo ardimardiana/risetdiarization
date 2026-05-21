@@ -1,7 +1,7 @@
 import os
 import warnings
 import torch
-import torchaudio
+import soundfile as sf
 import pytorch_lightning as pl
 from pyannote.core import Segment, Timeline
 from pyannote.audio import Model
@@ -10,19 +10,20 @@ from pyannote.database.protocol.speaker_diarization import SpeakerDiarizationPro
 from pyannote.database.util import load_rttm
 from agent_config import get_agent_configuration
 
+# Mute the torch_audiomentations FutureWarnings to keep stdout clean
 warnings.filterwarnings("ignore")
 
 class SingleFileProtocol(SpeakerDiarizationProtocol):
-    # 1. FIX: Tell Pyannote that speaker labels are unique to the file
+    # Satisfy Pyannote's internal protocol checks
+    name = "POD_711_Protocol" 
     scope = "file" 
 
     def trn_iter(self):
         rttm_data = load_rttm("POD_711.rttm")
         annotation = list(rttm_data.values())[0]
         
-        # 2. FIX: Create an 'annotated' timeline so the Task knows where to sample chunks
-        info = torchaudio.info("POD_711.wav")
-        duration = info.num_frames / info.sample_rate
+        # Bulletproof duration extraction using soundfile
+        duration = sf.info("POD_711.wav").duration
         annotated = Timeline([Segment(0, duration)])
 
         yield {
@@ -62,6 +63,7 @@ def main():
     model.task = task
     model.setup(stage="fit")
 
+    # Force learning rate injection
     from types import MethodType
     from torch.optim import Adam
     
