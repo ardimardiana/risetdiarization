@@ -1,1 +1,0 @@
-pip install python-dotenv google-genai pyannote.audio pyannote.metrics pyyaml torch librosa soundfile scipy numpy
