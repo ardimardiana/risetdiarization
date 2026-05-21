@@ -13,8 +13,7 @@ from agent_config import get_agent_configuration
 warnings.filterwarnings("ignore")
 
 class SingleFileProtocol(SpeakerDiarizationProtocol):
-    
-    
+        
     def __init__(self):
         super().__init__()
         self.scope = "file"
