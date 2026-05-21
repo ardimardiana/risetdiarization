@@ -21,8 +21,7 @@ class SingleFileProtocol(SpeakerDiarizationProtocol):
         pass  # block pyannote from registering/modifying subclass
 
     def __init__(self):
-        # Call the base class constructor to initialize 'preprocessors' and other attributes
-        super().__init__() 
+        # Don't call super().__init__() at all
         self.scope = "file"
         self.name = "POD_711_Protocol"
 
