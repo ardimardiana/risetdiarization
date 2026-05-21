@@ -44,6 +44,10 @@ def main():
     
     protocol = SingleFileProtocol()
     
+    # FORCE INJECT attributes to bypass Pyannote's strict __init__ wipeout
+    protocol.name = "POD_711_Protocol"
+    protocol.scope = "file"
+    
     task = SpeakerDiarization(
         protocol, 
         duration=10.0,
@@ -53,11 +57,11 @@ def main():
         num_workers=4,
         augmentation=augmentation
     )
-
+    
     hf_token = os.environ.get("HF_TOKEN")
     model = Model.from_pretrained(
-        "pyannote/segmentation-3.0", 
-        use_auth_token=hf_token
+        "pyannote/segmentation-3.1", 
+        token=hf_token
     )
     
     model.task = task

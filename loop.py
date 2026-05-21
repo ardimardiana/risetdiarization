@@ -35,7 +35,10 @@ Rules:
 2. CRITICAL: The very first line inside your function MUST be a comment starting exactly with `# STRATEGY: ` explaining your approach.
 3. You must return a tuple: `(hyperparameters_dict, augmentation_pipeline)`.
 4. MAX BATCH SIZE: 16. Do not exceed a batch size of 16 to prevent CUDA OOM on the 22GB VRAM GPU.
-5. You may ONLY use the following classes from `torch_audiomentations`: `Compose`, `PitchShift`, `Gain`, `PolarityInversion`.
+5. You may ONLY use the following classes from `torch_audiomentations` with these EXACT argument signatures. DO NOT invent kwargs:
+   - `Gain(min_gain_in_db=-6.0, max_gain_in_db=6.0, p=0.5)`
+   - `PitchShift(min_transpose_semitones=-2.0, max_transpose_semitones=2.0, sample_rate=16000, p=0.5)`
+   - `PolarityInversion(p=0.5)`
 6. Output your code in a single ```python code block.
 
 CRITICAL PARADIGM: ACOUSTIC FINE-TUNING
