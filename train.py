@@ -14,15 +14,11 @@ warnings.filterwarnings("ignore")
 
 class SingleFileProtocol(SpeakerDiarizationProtocol):
     
-    # 1. THE FIX: Use @property to make these attributes immutable. 
-    # Pyannote's internal __init__ can no longer wipe them out.
-    @property
-    def name(self):
-        return "POD_711_Protocol"
-        
-    @property
-    def scope(self):
-        return "file"
+    
+    def __init__(self):
+        super().__init__()
+        self.scope = "file"
+        self.name = "POD_711_Protocol"
 
     def trn_iter(self):
         rttm_data = load_rttm("POD_711.rttm")
