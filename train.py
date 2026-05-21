@@ -22,6 +22,7 @@ class SingleFileProtocol(SpeakerDiarizationProtocol):
 
     def __init__(self):
         # Don't call super().__init__() at all
+        self.preprocessors = {}  # Add this line to fix the AttributeError
         self.scope = "file"
         self.name = "POD_711_Protocol"
 
